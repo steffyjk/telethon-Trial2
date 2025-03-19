@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+{% block title %}Conversations{% endblock %}
+{% block navbar_title %}Conversations{% endblock %}
+{% block content %}
+    <div style="display: flex;">
+        <div style="width: 300px; border-right: 1px solid #ccc;">
+            {% for conversation in conversations %}
+                <div class="conversation" data-dialog-id="{{ conversation.dialog_id }}" style="padding: 10px; border-bottom: 1px solid #ccc; cursor: pointer;">
+                    <strong>{{ conversation.name }}</strong><br>{{ conversation.last_message }}
+                </div>
+            {% endfor %}
+        </div>
+        <div class="chat-area" style="flex: 1; display: none;">
+            <div class="chat-messages" style="padding: 10px; height: 400px; overflow-y: auto;"></div>
+            <div style="padding: 10px;">
+                <input type="text" placeholder="Type a message" style="width: 80%;">
+                <button>Send</button>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+{% block extra_scripts %}
+    <script>
+        const sessionId = "{{ session_id }}";
+        const socket = new WebSocket(`ws://${window.location.host}/ws/session/${sessionId}/`);
+        let currentDialogId = null;
+
+        socket.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            if (data.type === "new_message" && data.sender_id == currentDialogId) {
+                const chatMessages = document.querySelector(".chat-messages");
+                chatMessages.insertAdjacentHTML('beforeend', `<div>${data.message}</div>`);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+        };
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const conversations = document.querySelectorAll('.conversation');
+            const chatArea = document.querySelector('.chat-area');
+            const chatMessages = document.querySelector('.chat-messages');
+            const messageInput = document.querySelector('input');
+            const sendButton = document.querySelector('button');
+
+            conversations.forEach(conv => {
+                conv.addEventListener('click', async function() {
+                    currentDialogId = this.getAttribute('data-dialog-id');
+                    chatArea.style.display = 'block';
+                    const response = await fetch(`/telegram/chat_history/${currentDialogId}/`);
+                    const data = await response.json();
+                    chatMessages.innerHTML = data.messages.map(msg => `<div>${msg.text}</div>`).join('');
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                });
+            });
+
+            async function sendMessage() {
+                const messageText = messageInput.value.trim();
+                if (!messageText || !currentDialogId) return;
+
+                const formData = new FormData();
+                formData.append('dialog_id', currentDialogId);
+                formData.append('message_text', messageText);
+                formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+                const response = await fetch('/telegram/send_message/', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const data = await response.json();
+                if (data.success) {
+                    chatMessages.insertAdjacentHTML('beforeend', `<div>${data.message.text}</div>`);
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                    messageInput.value = '';
+                }
+            }
+
+            sendButton.addEventListener('click', sendMessage);
+            messageInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') sendMessage();
+            });
+        });
+    </script>
+{% endblock %}

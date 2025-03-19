@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+{% block title %}Login{% endblock %}
+{% block navbar_title %}Login{% endblock %}
+{% block content %}
+    <h2 style="text-align: center;">Scan to Login</h2>
+    <div id="qrCode" style="text-align: center; margin: 20px;"></div>
+{% endblock %}
+{% block extra_scripts %}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script>
+        const sessionId = "{{ session_id }}";
+        console.log("Client Session ID:", sessionId);
+        console.log("QR URL:", "{{ qr_url }}");
+        console.log("WebSocket URL:", `ws://${window.location.host}/ws/session/${sessionId}/`);
+        const socket = new WebSocket(`ws://${window.location.host}/ws/session/${sessionId}/`);
+
+        let pollingInterval;  // Store the interval ID
+
+        socket.onopen = function() {
+            console.log("WebSocket connection established");
+        };
+
+        socket.onmessage = function(event) {
+            console.log("Raw WebSocket message:", event.data);
+            try {
+                const data = JSON.parse(event.data);
+                console.log("Parsed WebSocket message:", data);
+                if (data.type === "login_success") {
+                    console.log("Login successful, redirecting to /telegram/get-conversation/");
+                    clearInterval(pollingInterval);  // Stop polling
+                    console.log("Polling stopped via WebSocket");
+                    setTimeout(() => {
+                        window.location.href = "/telegram/get-conversation/";
+                    }, 500);
+                } else {
+                    console.log("Unexpected message type:", data.type);
+                }
+            } catch (e) {
+                console.error("Error parsing WebSocket message:", e);
+            }
+        };
+
+        socket.onerror = function(error) {
+            console.error("WebSocket error:", error);
+        };
+
+        socket.onclose = function(event) {
+            console.log("WebSocket closed:", event);
+        };
+
+        window.onload = function() {
+            console.log("Generating QR code...");
+            new QRCode(document.getElementById("qrCode"), {
+                text: "{{ qr_url }}",
+                width: 250,
+                height: 250,
+            });
+            console.log("QR code generated");
+
+            // Start polling and store the interval ID
+            pollingInterval = setInterval(() => {
+                fetch('/telegram/check_login_status/', { credentials: 'include' })
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log("Polling login status:", data);
+                        if (data.is_logged_in) {
+                            console.log("Polling detected login, redirecting...");
+                            clearInterval(pollingInterval);  // Stop polling
+                            console.log("Polling stopped via polling");
+                            window.location.href = "/telegram/get-conversation/";
+                        }
+                    })
+                    .catch(error => console.error("Polling error:", error));
+            }, 2000);
+        };
+    </script>
+{% endblock %}

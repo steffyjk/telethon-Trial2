@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% block title %}Chat with {{ contact.first_name }}{% endblock %}
+{% block navbar_title %}Chat{% endblock %}
+{% block content %}
+    <div class="chat-messages" style="padding: 10px; height: 400px; overflow-y: auto;">
+        {% for chat in chats %}
+            <div style="margin: 5px; {% if chat.is_sent %}text-align: right;{% endif %}">{{ chat.message_text }}</div>
+        {% endfor %}
+    </div>
+    <div style="padding: 10px;">
+        <input type="text" placeholder="Type a message" style="width: 80%;">
+        <button>Send</button>
+    </div>
+{% endblock %}
+{% block extra_scripts %}
+    <script>
+        const sessionId = "{{ session_id }}";
+        const socket = new WebSocket(`ws://${window.location.host}/ws/session/${sessionId}/`);
+        const contactId = "{{ contact.user_id }}";
+
+        socket.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            if (data.type === "new_message" && data.sender_id == contactId) {
+                document.querySelector('.chat-messages').insertAdjacentHTML('beforeend', `<div>${data.message}</div>`);
+            }
+        };
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const messageInput = document.querySelector('input');
+            const sendButton = document.querySelector('button');
+
+            async function sendMessage() {
+                const messageText = messageInput.value.trim();
+                if (!messageText) return;
+
+                const formData = new FormData();
+                formData.append('dialog_id', contactId);
+                formData.append('message_text', messageText);
+                formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+                const response = await fetch('/telegram/send_message/', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const data = await response.json();
+                if (data.success) {
+                    document.querySelector('.chat-messages').insertAdjacentHTML('beforeend', `<div style="text-align: right;">${data.message.text}</div>`);
+                    messageInput.value = '';
+                }
+            }
+
+            sendButton.addEventListener('click', sendMessage);
+            messageInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') sendMessage();
+            });
+        });
+    </script>
+{% endblock %}
