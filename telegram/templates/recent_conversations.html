@@ -2,24 +2,173 @@
 {% block title %}Conversations{% endblock %}
 {% block navbar_title %}Conversations{% endblock %}
 {% block content %}
-    <div style="display: flex;">
-        <div style="width: 300px; border-right: 1px solid #ccc;">
-            {% for conversation in conversations %}
-                <div class="conversation" data-dialog-id="{{ conversation.dialog_id }}" style="padding: 10px; border-bottom: 1px solid #ccc; cursor: pointer;">
-                    <strong>{{ conversation.name }}</strong><br>{{ conversation.last_message }}
-                </div>
-            {% endfor %}
+    <div class="telegram-container">
+        <!-- Sidebar: Conversations List -->
+        <div class="sidebar">
+            <div class="conversation-list">
+                {% for conversation in conversations %}
+                    <div class="conversation" data-dialog-id="{{ conversation.dialog_id }}">
+                        <div class="conversation-info">
+                            <div class="conversation-name">{{ conversation.name }}</div>
+                            <div class="conversation-last-message">{{ conversation.last_message }}</div>
+                        </div>
+                    </div>
+                {% empty %}
+                    <div class="no-conversations">No conversations found</div>
+                {% endfor %}
+            </div>
         </div>
-        <div class="chat-area" style="flex: 1; display: none;">
-            <div class="chat-messages" style="padding: 10px; height: 400px; overflow-y: auto;"></div>
-            <div style="padding: 10px;">
-                <input type="text" placeholder="Type a message" style="width: 80%;">
-                <button>Send</button>
+
+        <!-- Chat Area -->
+        <div class="chat-area">
+            <div class="chat-header">
+                <span class="chat-title">Select a conversation</span>
+            </div>
+            <div class="chat-messages"></div>
+            <div class="chat-input">
+                <input type="text" placeholder="Type a message..." />
+                <button class="send-button">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2 12L22 2L12 22L10 14L2 12Z" fill="#0088cc"/>
+                    </svg>
+                </button>
             </div>
         </div>
     </div>
 {% endblock %}
 {% block extra_scripts %}
+    <style>
+        .telegram-container {
+            display: flex;
+            height: calc(100vh - 60px); /* Adjust based on navbar height */
+            font-family: 'Roboto', sans-serif;
+            background-color: #f0f2f5;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 320px;
+            background-color: #fff;
+            border-right: 1px solid #e1e3e5;
+            overflow-y: auto;
+        }
+
+        .conversation-list {
+            padding: 10px 0;
+        }
+
+        .conversation {
+            padding: 12px 20px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .conversation:hover {
+            background-color: #f5f6f8;
+        }
+
+        .conversation-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .conversation-name {
+            font-weight: 500;
+            color: #000;
+            font-size: 14px;
+        }
+
+        .conversation-last-message {
+            color: #606770;
+            font-size: 13px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 260px;
+        }
+
+        .no-conversations {
+            padding: 20px;
+            text-align: center;
+            color: #999;
+        }
+
+        /* Chat Area */
+        .chat-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: #e5ddd5;
+            background-image: url('https://web.telegram.org/k/assets/img/bg-default.jpg');
+            background-size: cover;
+        }
+
+        .chat-header {
+            padding: 15px 20px;
+            background-color: #fff;
+            border-bottom: 1px solid #e1e3e5;
+            font-weight: 500;
+            font-size: 16px;
+        }
+
+        .chat-messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .message {
+            max-width: 60%;
+            padding: 8px 12px;
+            border-radius: 7.5px;
+            font-size: 14px;
+            word-wrap: break-word;
+        }
+
+        .message.sent {
+            background-color: #dcf8c6;
+            align-self: flex-end;
+        }
+
+        .message.received {
+            background-color: #fff;
+            align-self: flex-start;
+        }
+
+        .chat-input {
+            display: flex;
+            padding: 15px;
+            background-color: #fff;
+            border-top: 1px solid #e1e3e5;
+        }
+
+        .chat-input input {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            outline: none;
+            font-size: 14px;
+            border-radius: 20px;
+            background-color: #f0f2f5;
+            margin-right: 10px;
+        }
+
+        .send-button {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 0;
+            display: flex;
+            align-items: center;
+        }
+
+        .send-button:hover svg path {
+            fill: #00aced;
+        }
+    </style>
     <script>
         const sessionId = "{{ session_id }}";
         const socket = new WebSocket(`ws://${window.location.host}/ws/session/${sessionId}/`);
@@ -27,9 +176,12 @@
 
         socket.onmessage = function(event) {
             const data = JSON.parse(event.data);
-            if (data.type === "new_message" && data.sender_id == currentDialogId) {
+            if (data.type === "new_message" && data.sender_id === currentDialogId) {
                 const chatMessages = document.querySelector(".chat-messages");
-                chatMessages.insertAdjacentHTML('beforeend', `<div>${data.message}</div>`);
+                const messageDiv = document.createElement("div");
+                messageDiv.classList.add("message", "received");
+                messageDiv.textContent = data.message;
+                chatMessages.appendChild(messageDiv);
                 chatMessages.scrollTop = chatMessages.scrollHeight;
             }
         };
@@ -37,17 +189,26 @@
         document.addEventListener('DOMContentLoaded', function() {
             const conversations = document.querySelectorAll('.conversation');
             const chatArea = document.querySelector('.chat-area');
+            const chatHeader = document.querySelector('.chat-header .chat-title');
             const chatMessages = document.querySelector('.chat-messages');
-            const messageInput = document.querySelector('input');
-            const sendButton = document.querySelector('button');
+            const messageInput = document.querySelector('.chat-input input');
+            const sendButton = document.querySelector('.send-button');
 
             conversations.forEach(conv => {
                 conv.addEventListener('click', async function() {
                     currentDialogId = this.getAttribute('data-dialog-id');
-                    chatArea.style.display = 'block';
+                    chatArea.style.display = 'flex';
+                    chatHeader.textContent = this.querySelector('.conversation-name').textContent;
+
                     const response = await fetch(`/telegram/chat_history/${currentDialogId}/`);
                     const data = await response.json();
-                    chatMessages.innerHTML = data.messages.map(msg => `<div>${msg.text}</div>`).join('');
+                    chatMessages.innerHTML = '';
+                    data.messages.forEach(msg => {
+                        const messageDiv = document.createElement("div");
+                        messageDiv.classList.add("message", msg.is_sent ? "sent" : "received");
+                        messageDiv.textContent = msg.text;
+                        chatMessages.appendChild(messageDiv);
+                    });
                     chatMessages.scrollTop = chatMessages.scrollHeight;
                 });
             });
@@ -67,7 +228,10 @@
                 });
                 const data = await response.json();
                 if (data.success) {
-                    chatMessages.insertAdjacentHTML('beforeend', `<div>${data.message.text}</div>`);
+                    const messageDiv = document.createElement("div");
+                    messageDiv.classList.add("message", "sent");
+                    messageDiv.textContent = data.message.text;
+                    chatMessages.appendChild(messageDiv);
                     chatMessages.scrollTop = chatMessages.scrollHeight;
                     messageInput.value = '';
                 }
