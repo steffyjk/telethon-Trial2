@@ -270,34 +270,61 @@ async def get_chat_history(request, dialog_id):
     return await sync_to_async(lambda: JsonResponse({'messages': messages_data}))()
 
 async def send_message(request):
-    if request.method != 'POST':
-        return JsonResponse({'error': 'Invalid request method'}, status=400)
+    # Log entry
+    print("Entering send_message")
 
-    session_id = request.session.get('session_id')
-    if not session_id or not request.session.get('is_logged_in'):
-        return JsonResponse({'error': 'Not authenticated'}, status=401)
+    # Check method
+    method = await sync_to_async(lambda: request.method)()
+    if method != 'POST':
+        print("Invalid method:", method)
+        return await sync_to_async(lambda: JsonResponse({'error': 'Invalid request method'}, status=400))()
 
-    dialog_id = request.POST.get('dialog_id')
-    message_text = request.POST.get('message_text')
+    # Session checks
+    session_id = await sync_to_async(lambda: request.session.get('session_id'))()
+    is_logged_in = await sync_to_async(lambda: request.session.get('is_logged_in'))()
+    print(f"Session ID: {session_id}, Logged In: {is_logged_in}")
+    if not session_id or not is_logged_in:
+        print("Not authenticated")
+        return await sync_to_async(lambda: JsonResponse({'error': 'Not authenticated'}, status=401))()
+
+    # POST data
+    dialog_id = await sync_to_async(lambda: request.POST.get('dialog_id'))()
+    message_text = await sync_to_async(lambda: request.POST.get('message_text'))()
+    print(f"Dialog ID: {dialog_id}, Message: {message_text}")
     if not dialog_id or not message_text:
-        return JsonResponse({'error': 'Missing parameters'}, status=400)
+        print("Missing parameters")
+        return await sync_to_async(lambda: JsonResponse({'error': 'Missing parameters'}, status=400))()
 
+    # Telegram client
+    print("Getting Telegram client")
     client = await telegram_manager.get_client(session_id)
-    conversation = await sync_to_async(Conversation.objects.get)(session_id=session_id, dialog_id=dialog_id)
-    contact = conversation.contact
-    message = await client.send_message(contact.user_id, message_text)
 
-    await sync_to_async(Chat.objects.create)(
+    # Fetch conversation
+    print(f"Fetching conversation for dialog_id: {dialog_id}")
+    conversation = await sync_to_async(lambda: Conversation.objects.get(session_id=session_id, dialog_id=dialog_id))()
+    contact = await sync_to_async(lambda: conversation.contact)()  # Ensure contact access is wrapped
+    print(f"Got conversation: {conversation.name}, Contact: {contact.user_id}")
+
+    # Send message
+    print("Sending message via Telegram")
+    message = await client.send_message(contact.user_id, message_text)
+    print(f"Message sent, ID: {message.id}")
+
+    # Save chat
+    print("Saving chat message")
+    await sync_to_async(lambda: Chat.objects.create(
         session_id=session_id,
         contact=contact,
         message_id=message.id,
         message_text=message_text,
         timestamp=message.date,
         is_sent=True,
-    )
+    ))()
 
+    # Update conversation
     last_message = message_text if len(message_text) <= 30 else message_text[:30] + "..."
-    await sync_to_async(Conversation.objects.update_or_create)(
+    print("Updating conversation")
+    await sync_to_async(lambda: Conversation.objects.update_or_create(
         session_id=session_id,
         dialog_id=dialog_id,
         contact=contact,
@@ -307,8 +334,10 @@ async def send_message(request):
             'timestamp': str(message.date),
             'unread_count': 0,
         }
-    )
+    ))()
 
+    # WebSocket update
+    print("Sending WebSocket update")
     channel_layer = get_channel_layer()
     await channel_layer.group_send(
         f"session_{session_id}",
@@ -320,7 +349,9 @@ async def send_message(request):
         }
     )
 
-    return JsonResponse({
+    # Response
+    print("Returning response")
+    return await sync_to_async(lambda: JsonResponse({
         'success': True,
         'message': {
             'id': message.id,
@@ -328,4 +359,4 @@ async def send_message(request):
             'timestamp': str(message.date),
             'is_sent': True,
         }
-    })
+    }))()
