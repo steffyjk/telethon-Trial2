@@ -1,6 +1,7 @@
 import asyncio
-import uuid
 from asgiref.sync import sync_to_async
+from django.shortcuts import render, redirect
+import uuid
 from channels.layers import get_channel_layer
 from django.http import JsonResponse
 from django.shortcuts import render, redirect
@@ -96,10 +97,6 @@ async def wait_for_login(qr_login, request, session_id):
         except Exception as e:
             print(f"QR login recreate: {e}")
             await qr_login.recreate()
-import asyncio
-from asgiref.sync import sync_to_async
-from django.shortcuts import render, redirect
-from django.urls import reverse
 
 async def recent_conversations(request):
     session_id = await sync_to_async(lambda: request.session.get('session_id'))()
@@ -208,57 +205,6 @@ async def recent_conversations(request):
     }))()
     print(f"Response sent for session {session_id}")
     return response
-# async def recent_conversations(request):
-#     # breakpoint()
-#     session_id = request.session.get('session_id')
-#     if not session_id or not request.session.get('is_logged_in'):
-#         return redirect(reverse('homepage'))
-
-#     client = await telegram_manager.get_client(session_id)
-#     conversations = await sync_to_async(lambda: list(Conversation.objects.filter(session_id=session_id)))()
-#     if not conversations:
-#         dialogs = await client.get_dialogs()
-#         current_user_id = (await client.get_me()).id
-#         for dialog in dialogs:
-#             entity = dialog.entity
-#             contact, _ = await sync_to_async(Contact.objects.get_or_create)(
-#                 session_id=session_id,
-#                 user_id=entity.id,
-#                 defaults={
-#                     'first_name': getattr(entity, 'first_name', None) or '',
-#                     'last_name': getattr(entity, 'last_name', None) or '',
-#                     'phone': getattr(entity, 'phone', None) or 'Unknown',
-#                 }
-#             )
-#             messages = await client.get_messages(entity, limit=50)
-#             for message in messages:
-#                 await sync_to_async(Chat.objects.update_or_create)(
-#                     session_id=session_id,
-#                     contact=contact,
-#                     message_id=message.id,
-#                     defaults={
-#                         'message_text': message.message or '',
-#                         'timestamp': message.date,
-#                         'is_sent': message.sender_id == current_user_id,
-#                     }
-#                 )
-#             last_message = dialog.message.message or "No message"
-#             if len(last_message) > 30:
-#                 last_message = last_message[:30] + "..."
-#             await sync_to_async(Conversation.objects.update_or_create)(
-#                 session_id=session_id,
-#                 dialog_id=dialog.id,
-#                 contact=contact,
-#                 defaults={
-#                     'name': dialog.name or 'Unknown',
-#                     'last_message': last_message,
-#                     'timestamp': str(dialog.message.date) if dialog.message else '...',
-#                     'unread_count': dialog.unread_count,
-#                 }
-#             )
-#         conversations = await sync_to_async(lambda: list(Conversation.objects.filter(session_id=session_id)))()
-
-#     return render(request, 'recent_conversations.html', {'conversations': conversations, 'session_id': session_id})
 
 async def chat_with_contact(request, contact_id):
     session_id = request.session.get('session_id')
@@ -300,13 +246,17 @@ async def chat_with_contact(request, contact_id):
     return render(request, 'chat_with_contact.html', {'contact': contact, 'chats': chats, 'session_id': session_id})
 
 async def get_chat_history(request, dialog_id):
-    session_id = request.session.get('session_id')
-    if not session_id or not request.session.get('is_logged_in'):
-        return JsonResponse({'error': 'Not authenticated'}, status=401)
+    session_id = await sync_to_async(lambda: request.session.get("session_id"))()
+    print(f"Session data: {await sync_to_async(lambda: dict(request.session.items()))()}")
+    if not session_id:
+        return await sync_to_async(lambda: JsonResponse({'error': 'Not authenticated'}, status=401))()
 
+    # Fetch messages for the given dialog_id
     messages = await sync_to_async(lambda: list(
-        Chat.objects.filter(session_id=session_id, contact__conversations__dialog_id=dialog_id).order_by('timestamp')
+        Chat.objects.filter(session_id=session_id, contact__conversations__dialog_id=dialog_id)
+        .order_by('timestamp')
     ))()
+
     messages_data = [
         {
             'id': msg.message_id,
@@ -316,7 +266,8 @@ async def get_chat_history(request, dialog_id):
         }
         for msg in messages
     ]
-    return JsonResponse({'messages': messages_data})
+
+    return await sync_to_async(lambda: JsonResponse({'messages': messages_data}))()
 
 async def send_message(request):
     if request.method != 'POST':
