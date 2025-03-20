@@ -335,19 +335,19 @@ async def send_message(request):
             'unread_count': 0,
         }
     ))()
-
-    # WebSocket update
-    print("Sending WebSocket update")
-    channel_layer = get_channel_layer()
-    await channel_layer.group_send(
-        f"session_{session_id}",
-        {
-            "type": "new_message",
-            "message": message_text,
-            "sender_id": str(contact.user_id),
-            "timestamp": str(message.date),
-        }
-    )
+    # NOTE: This is a simplified version of the update_or_create method. In production, you should handle the case where the conversation already exists.
+    # # WebSocket update
+    # print("Sending WebSocket update")
+    # channel_layer = get_channel_layer()
+    # await channel_layer.group_send(
+    #     f"session_{session_id}",
+    #     {
+    #         "type": "new_message",
+    #         "message": message_text,
+    #         "sender_id": str(contact.user_id),
+    #         "timestamp": str(message.date),
+    #     }
+    # )
 
     # Response
     print("Returning response")
