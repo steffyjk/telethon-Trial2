@@ -9,6 +9,9 @@ from django.urls import reverse
 from telethon import TelegramClient, events
 from telethon.tl.functions.messages import GetHistoryRequest
 from telethon.tl.types import MessageMediaPhoto, MessageMediaDocument
+import os
+from django.conf import settings
+import base64
 
 from .models import Contact, Chat, Conversation
 
@@ -144,6 +147,7 @@ async def recent_conversations(request):
 
     client = await telegram_manager.get_client(session_id)
     conversations = await sync_to_async(lambda: list(Conversation.objects.filter(session_id=session_id)))()
+ 
     if not conversations:
         dialogs = await client.get_dialogs(limit=None)
         print(f"Fetched {len(dialogs)} dialogs from Telegram for session {session_id}")
@@ -192,9 +196,27 @@ async def recent_conversations(request):
                 print(f"Error fetching messages for dialog {dialog.id} ({dialog.name}): {e}")
                 messages = []
 
-            # Save messages
+            # Save messages (Handle text & images)
             for message in messages:
                 try:
+                    base64_image = None
+                    is_image = False
+
+                    if isinstance(message.media, MessageMediaPhoto):  # If message has an image
+                        media_folder = os.path.join(settings.MEDIA_ROOT, "telegram_images")
+                        os.makedirs(media_folder, exist_ok=True)
+
+                        file_path = os.path.join(media_folder, f"{message.id}.jpg")
+                        await message.download_media(file=file_path)  # Save image locally
+
+                        # Convert image to Base64
+                        with open(file_path, "rb") as image_file:
+                            base64_image = base64.b64encode(image_file.read()).decode("utf-8")
+                        is_image = True
+
+                        # Delete the image after conversion
+                        os.remove(file_path)
+
                     await sync_to_async(Chat.objects.update_or_create)(
                         session_id=session_id,
                         contact=contact,
@@ -203,6 +225,8 @@ async def recent_conversations(request):
                             'message_text': message.message or '',
                             'timestamp': message.date,
                             'is_sent': message.sender_id == current_user_id,
+                            'is_image': is_image,
+                            'media_base64': base64_image,  # Store Base64 image if available
                         }
                     )
                 except Exception as e:
@@ -300,6 +324,8 @@ async def get_chat_history(request, dialog_id):
             'text': msg.message_text,
             'timestamp': str(msg.timestamp),
             'is_sent': msg.is_sent,
+            'is_image': msg.is_image,
+            "media_base64": msg.media_base64 if msg.media_base64 else None,
         }
         for msg in messages
     ]
