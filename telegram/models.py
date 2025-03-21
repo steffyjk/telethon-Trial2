@@ -22,6 +22,8 @@ class Chat(models.Model):
     message_text = models.TextField(blank=True, null=True)
     timestamp = models.DateTimeField()
     is_sent = models.BooleanField(default=False)
+    is_image = models.BooleanField(default=False)
+    media_base64 = models.TextField(null=True, blank=True)
 
     class Meta:
         unique_together = ('session_id', 'contact', 'message_id')

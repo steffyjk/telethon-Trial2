@@ -8,6 +8,7 @@ from django.shortcuts import render, redirect
 from django.urls import reverse
 from telethon import TelegramClient, events
 from telethon.tl.functions.messages import GetHistoryRequest
+from telethon.tl.types import MessageMediaPhoto, MessageMediaDocument
 
 from .models import Contact, Chat, Conversation
 
@@ -23,11 +24,39 @@ class TelegramManager:
             self._clients[session_id] = client
         return self._clients[session_id]
 
+    from telethon.tl.types import MessageMediaPhoto, MessageMediaDocument
+    from asgiref.sync import sync_to_async
+
+    import os
+    from django.conf import settings
+
+    
     def _setup_event_handlers(self, client, session_id):
         @client.on(events.NewMessage)
         async def handle_new_message(event):
-            print("__________________", event)
-            # breakpoint()
+            import os
+            from django.conf import settings
+            import base64
+            base64_image = None
+            is_image = False
+
+            if event.photo:  # Check if the message contains an image
+                media_folder = os.path.join(settings.MEDIA_ROOT, "telegram_images")
+                os.makedirs(media_folder, exist_ok=True)
+
+                file_path = os.path.join(media_folder, f"{event.message.id}.jpg")
+                await event.message.download_media(file=file_path)  # Save image locally
+
+                # Convert image to Base64
+                with open(file_path, "rb") as image_file:
+                    base64_image = base64.b64encode(image_file.read()).decode("utf-8")
+                is_image = True
+
+                if file_path:
+                    # Delete the image after conversion
+                    os.remove(file_path)
+
+            # Save message details to DB (text or image)
             contact, _ = await sync_to_async(Contact.objects.get_or_create)(
                 session_id=session_id, user_id=event.sender_id,
                 defaults={'first_name': '', 'last_name': '', 'phone': 'Unknown'}
@@ -39,7 +68,11 @@ class TelegramManager:
                 message_text=event.message.message or "",
                 timestamp=event.message.date,
                 is_sent=event.message.out,
+                is_image=is_image,
+                media_base64=base64_image  # Store Base64 image in DB (None if text)
             )
+
+            # Send WebSocket update (text or image)
             channel_layer = get_channel_layer()
             await channel_layer.group_send(
                 f"session_{session_id}",
@@ -48,6 +81,8 @@ class TelegramManager:
                     "message": event.message.message or "",
                     "sender_id": str(event.sender_id),
                     "timestamp": event.message.date.isoformat(),
+                    "is_image": is_image,
+                    "media_base64": base64_image,  # None if text, Base64 if image
                 }
             )
 
