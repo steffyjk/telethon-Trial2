@@ -26,6 +26,8 @@ class TelegramManager:
     def _setup_event_handlers(self, client, session_id):
         @client.on(events.NewMessage)
         async def handle_new_message(event):
+            print("__________________", event)
+            # breakpoint()
             contact, _ = await sync_to_async(Contact.objects.get_or_create)(
                 session_id=session_id, user_id=event.sender_id,
                 defaults={'first_name': '', 'last_name': '', 'phone': 'Unknown'}
@@ -36,7 +38,7 @@ class TelegramManager:
                 message_id=event.message.id,
                 message_text=event.message.message or "",
                 timestamp=event.message.date,
-                is_sent=False,
+                is_sent=event.message.out,
             )
             channel_layer = get_channel_layer()
             await channel_layer.group_send(
